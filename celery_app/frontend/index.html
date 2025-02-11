@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Computation App</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and ReactDOM (development versions) -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <!-- Babel for JSX processing -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body class="bg-gray-100 scroll-smooth">
+    <div id="root"></div>
+    
+    <script type="text/babel">
+      const { useState, useEffect, useRef } = React;
+
+      function App() {
+        const [file, setFile] = useState(null);
+        const [userId, setUserId] = useState("");
+        const [columns, setColumns] = useState([]);
+        const [selectedColumn, setSelectedColumn] = useState("");
+        const [operation, setOperation] = useState("");
+        const [finalSqlQuery, setFinalSqlQuery] = useState("");
+        const [result, setResult] = useState(null);
+        const [loading, setLoading] = useState(false);
+        const [error, setError] = useState("");
+        const [taskId, setTaskId] = useState(null);
+        const [processingStatus, setProcessingStatus] = useState("");
+
+        const uploadRef = useRef(null);
+        const selectRef = useRef(null);
+        const resultRef = useRef(null);
+
+        // Smooth scrolling to a section
+        const scrollTo = (ref) => {
+          ref.current && ref.current.scrollIntoView({ behavior: "smooth" });
+        };
+
+        // Poll the /api/task_status endpoint until the task is complete.
+        const pollTaskStatus = async (taskId) => {
+          try {
+            const response = await fetch(`/api/task_status/${taskId}`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.state === "SUCCESS") {
+                // When the task is complete, update the columns list.
+                setColumns(data.result.columns);
+                setProcessingStatus("");
+                scrollTo(selectRef);
+              } else if (data.state === "FAILURE") {
+                setError("File processing failed.");
+                setProcessingStatus("");
+              } else {
+                // Still processing; poll again in 2 seconds.
+                setProcessingStatus("Processing file... Please wait.");
+                setTimeout(() => pollTaskStatus(taskId), 2000);
+              }
+            } else {
+              setError("Error checking task status.");
+            }
+          } catch (err) {
+            setError("Error checking task status.");
+          }
+        };
+
+        const handleUpload = async (e) => {
+          e.preventDefault();
+          setError("");
+          setProcessingStatus("");
+          if (!file || !userId) {
+            setError("Please provide a file and user ID.");
+            return;
+          }
+          setLoading(true);
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("user_id", userId);
+          try {
+            const response = await fetch("/api/upload", {
+              method: "POST",
+              body: formData,
+            });
+            const data = await response.json();
+            if (data.error) {
+              setError(data.error);
+            } else {
+              setTaskId(data.task_id);
+              setProcessingStatus("File uploaded. Processing file...");
+              pollTaskStatus(data.task_id);
+            }
+          } catch (err) {
+            setError("Error uploading file.");
+          }
+          setLoading(false);
+        };
+
+        const handleCompute = async (e) => {
+          e.preventDefault();
+          setError("");
+          if (!selectedColumn || !operation) {
+            setError("Please select a column and enter an operation.");
+            return;
+          }
+          setLoading(true);
+          try {
+            const response = await fetch("/api/compute", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ column: selectedColumn, operation }),
+            });
+            const data = await response.json();
+            if (data.error) {
+              setError(data.error);
+            } else {
+              setFinalSqlQuery(data.final_sql_query);
+              setResult(data.result);
+              scrollTo(resultRef);
+            }
+          } catch (err) {
+            setError("Error computing result.");
+          }
+          setLoading(false);
+        };
+
+        const reset = () => {
+          setFile(null);
+          setUserId("");
+          setColumns([]);
+          setSelectedColumn("");
+          setOperation("");
+          setFinalSqlQuery("");
+          setResult(null);
+          setTaskId(null);
+          setProcessingStatus("");
+          setError("");
+          scrollTo(uploadRef);
+        };
+
+        return (
+          <div className="min-h-screen flex flex-col">
+            {/* Upload Section */}
+            <section ref={uploadRef} className="py-10 bg-white shadow mb-4">
+              <div className="max-w-2xl mx-auto px-4">
+                <h1 className="text-3xl font-bold text-center mb-6">Upload File</h1>
+                {error && (
+                  <div className="bg-red-200 text-red-800 p-2 rounded mb-4">
+                    {error}
+                  </div>
+                )}
+                {loading && <div className="text-center mb-4">Loading...</div>}
+                <form onSubmit={handleUpload}>
+                  <div className="mb-4">
+                    <label className="block text-gray-700 mb-2">User ID</label>
+                    <input
+                      type="text"
+                      value={userId}
+                      onChange={(e) => setUserId(e.target.value)}
+                      className="w-full border rounded p-2"
+                      required
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-gray-700 mb-2">
+                      Upload File (CSV or XLSX)
+                    </label>
+                    <input
+                      type="file"
+                      onChange={(e) => setFile(e.target.files[0])}
+                      className="w-full"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-500 hover:bg-blue-600 text-white p-2 rounded"
+                  >
+                    Upload File
+                  </button>
+                </form>
+                {processingStatus && (
+                  <div className="mt-4 text-center text-gray-700">
+                    {processingStatus}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Operation Section (visible once columns are loaded) */}
+            {columns.length > 0 && (
+              <section ref={selectRef} className="py-10 bg-gray-50 shadow mb-4">
+                <div className="max-w-2xl mx-auto px-4">
+                  <h2 className="text-3xl font-bold text-center mb-6">Select Operation</h2>
+                  <form onSubmit={handleCompute}>
+                    <div className="mb-4">
+                      <label className="block text-gray-700 mb-2">Select Column</label>
+                      <select
+                        value={selectedColumn}
+                        onChange={(e) => setSelectedColumn(e.target.value)}
+                        className="w-full border rounded p-2"
+                        required
+                      >
+                        <option value="">-- Select Column --</option>
+                        {columns.map((col, idx) => (
+                          <option key={idx} value={col}>
+                            {col}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mb-4">
+                      <label className="block text-gray-700 mb-2">Enter Operation</label>
+                      <input
+                        type="text"
+                        value={operation}
+                        onChange={(e) => setOperation(e.target.value)}
+                        className="w-full border rounded p-2"
+                        placeholder="e.g., sum, average, min, max, count, etc."
+                        required
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full bg-green-500 hover:bg-green-600 text-white p-2 rounded"
+                    >
+                      Compute
+                    </button>
+                  </form>
+                </div>
+              </section>
+            )}
+
+            {/* Result Section */}
+            {result !== null && (
+              <section ref={resultRef} className="py-10 bg-white shadow mb-4">
+                <div className="max-w-2xl mx-auto px-4">
+                  <h2 className="text-3xl font-bold text-center mb-6">Result</h2>
+                  <div className="mb-4">
+                    <h3 className="text-xl font-semibold mb-2">SQL Query:</h3>
+                    <textarea
+                      className="w-full border rounded p-2 bg-gray-100"
+                      rows="4"
+                      readOnly
+                      value={finalSqlQuery}
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <h3 className="text-xl font-semibold mb-2">Computed Result:</h3>
+                    <p className="text-lg">{result}</p>
+                  </div>
+                  <button
+                    onClick={reset}
+                    className="w-full bg-blue-500 hover:bg-blue-600 text-white p-2 rounded"
+                  >
+                    Start Over
+                  </button>
+                </div>
+              </section>
+            )}
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>

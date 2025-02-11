@@ -1,0 +1,15 @@
+flask
+pandas
+numpy
+SQLAlchemy
+transformers
+torch
+transformers
+werkzeug
+openpyxl
+groq
+python-dotenv
+pymysql
+celery 
+redis 
+sqlalchemy

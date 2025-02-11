@@ -1,0 +1,31 @@
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore environment files
+.env
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore uploads and dataset files (optional, if they shouldn't be committed)
+celery_app/backend/uploads/
+simple_app/backend/uploads/
+
+# Ignore virtual environment (if using)
+venv/
+env/
+
+# Ignore compiled files
+*.so
+*.dll
+
+# Ignore dump files
+dump.rdb
+
+# Ignore logs and temp files
+*.log
+*.tmp
