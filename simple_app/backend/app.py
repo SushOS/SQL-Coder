@@ -24,7 +24,7 @@ print(f"Using DATABASE_URL: {DATABASE_URL}")
 # Setup Flask
 # ----------------------------------
 app = Flask(__name__, template_folder="../frontend")
-app.secret_key = "a_very_secret_key"
+app.secret_key = os.getenv("SECRET_KEY")
 
 # Folder for uploads
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
@@ -160,7 +160,6 @@ def api_compute():
     data = request.get_json()
     if not data:
         return jsonify({"error": "Invalid JSON payload."}), 400
-    
     column = data.get("column")
     operation = data.get("operation")
     user_id = session.get("user_id", "default_user")
