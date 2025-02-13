@@ -101,18 +101,6 @@ def allowed_file(filename):
     """Check if the file has one of the allowed extensions."""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def clean_query(query):
-    """Clean the LLM output by stripping whitespace and removing markdown fences."""
-    query = query.strip()
-    if query.startswith("```") and query.endswith("```"):
-        lines = query.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        query = "\n".join(lines).strip()
-    return query
-
 def generate_sql_query(column, operation, table_name):
     # Fallback query if the LLM fails to generate a valid query.
     fallback_query = f"SELECT {operation}(value) FROM {table_name} WHERE column_name = '{column}';"
@@ -134,7 +122,6 @@ def generate_sql_query(column, operation, table_name):
         )
         print(f"LLM Output (raw): {response}")
         final_sql_query = response.choices[0].message.content.strip()
-        final_sql_query = clean_query(final_sql_query)
         print("The LLM has successfully generated the query.")
         return {"final_sql_query": final_sql_query}
     except Exception as e:

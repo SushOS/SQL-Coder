@@ -1,5 +1,4 @@
 import os
-import uuid
 import pandas as pd
 import numpy as np
 
@@ -60,10 +59,8 @@ class ComputedResult(Base):
 Base.metadata.create_all(bind=engine)
 
 # ----------------------------------
-# Open-Source LLM Setup (using LLaMA-2-7b-chat)
+# llama-3.1-8b-instant
 # ----------------------------------
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
 from groq import Groq
 client = Groq(api_key=groq_api_key)
 
@@ -75,23 +72,6 @@ print("Model loaded successfully.")
 def allowed_file(filename):
     """Check if the file has one of the allowed extensions."""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def clean_query(query):
-    """
-    Clean the LLM output by stripping leading/trailing whitespace
-    and removing markdown code fences if present.
-    """
-    query = query.strip()
-    if query.startswith("```") and query.endswith("```"):
-        lines = query.splitlines()
-        # Remove the first line if it starts with ```
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        # Remove the last line if it starts with ```
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        query = "\n".join(lines).strip()
-    return query
 
 def generate_sql_query(column, operation, table_name):
     # Fallback query if the LLM fails to generate a valid query.
@@ -106,7 +86,7 @@ def generate_sql_query(column, operation, table_name):
     
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",  # Update model name if needed.
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": "SQL code only, no explanation or other text."},
                 {"role": "user", "content": prompt}
@@ -114,7 +94,6 @@ def generate_sql_query(column, operation, table_name):
         )
         print(f"LLM Output (raw): {response}")
         final_sql_query = response.choices[0].message.content.strip()
-        final_sql_query = clean_query(final_sql_query)
         print("The LLM has successfully generated the query.")
         return {"final_sql_query": final_sql_query}
     except Exception as e:
@@ -181,7 +160,7 @@ def api_compute():
     data = request.get_json()
     if not data:
         return jsonify({"error": "Invalid JSON payload."}), 400
-
+    
     column = data.get("column")
     operation = data.get("operation")
     user_id = session.get("user_id", "default_user")
