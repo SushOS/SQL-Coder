@@ -6,8 +6,7 @@ from flask import Flask, request, session, jsonify, render_template
 from werkzeug.utils import secure_filename
 
 from sqlalchemy import create_engine, Column, String, Float, Integer, Text, text
-from sqlalchemy.orm import declarative_base, sessionmaker
-
+from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -36,9 +35,11 @@ if not os.path.exists(UPLOAD_FOLDER):
 # ----------------------------------
 # Database Setup (Using MySQL with SQLAlchemy)
 # ----------------------------------
-engine = create_engine(DATABASE_URL, echo=False)
+# engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(DATABASE_URL, pool_size=10, max_overflow=20, echo=False)
 Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
+db_session = scoped_session(SessionLocal)
 
 # Table for storing numeric values (tall format)
 class UploadedValue(Base):
@@ -205,6 +206,7 @@ def api_compute():
             )
             db.add(comp_result)
         db.commit()
+        db_session.remove()
     except Exception as db_e:
         # If saving to the database fails, ignore the database error and use the fixed message.
         computed_value = "This query is not supported by the database."
