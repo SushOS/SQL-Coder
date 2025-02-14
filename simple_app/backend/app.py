@@ -42,9 +42,16 @@ SessionLocal = sessionmaker(bind=engine)
 db_session = scoped_session(SessionLocal)
 
 # Table for storing numeric values (tall format)
+# class UploadedValue(Base):
+#     __tablename__ = "uploaded_values"
+#     id = Column(Integer, primary_key=True)
+#     column_name = Column(String(255), index=True)
+#     value = Column(Float)
+
 class UploadedValue(Base):
     __tablename__ = "uploaded_values"
     id = Column(Integer, primary_key=True)
+    user_id = Column(String(255), index=True)  # Added to track which user uploaded the data
     column_name = Column(String(255), index=True)
     value = Column(Float)
 
@@ -64,7 +71,6 @@ Base.metadata.create_all(bind=engine)
 # ----------------------------------
 from groq import Groq
 client = Groq(api_key=groq_api_key)
-
 print("Model loaded successfully.")
 
 # ----------------------------------
@@ -74,16 +80,17 @@ def allowed_file(filename):
     """Check if the file has one of the allowed extensions."""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def generate_sql_query(column, operation, table_name):
+def generate_sql_query(column, operation, table_name, user_id):
     # Fallback query if the LLM fails to generate a valid query.
-    fallback_query = f"SELECT {operation}(value) FROM {table_name} WHERE column_name = '{column}';"
+    # fallback_query = f"SELECT {operation}(value) FROM {table_name} WHERE column_name = '{column}';"
+    fallback_query = f"SELECT {operation}(value) FROM uploaded_values WHERE column_name = '{column}' AND user_id = '{user_id}';"
     prompt = (
         "[INST]Your task is to write a MySQL query. "
-        "The query must compute the {operation} of the column '{column}' from the table '{table_name}'. "
-        "The table has the following columns: id, column_name, value. "
+        "The query must compute the {operation} of the column '{column}' from the table '{table_name}' having user_id : {user_id}. "
+        "The table has the following columns: id, user_id, column_name, value. "
         "Return ONLY the MySQL query and nothing else, with no additional text or explanation. "
         "The query must start with SELECT.[/INST]"
-    ).format(operation=operation, column=column, table_name=table_name)
+    ).format(operation=operation, column=column, table_name=table_name, user_id=user_id)
     
     try:
         response = client.chat.completions.create(
@@ -109,6 +116,54 @@ def generate_sql_query(column, operation, table_name):
 def index():
     return render_template("index.html")
 
+# @app.route("/api/upload", methods=["POST"])
+# def api_upload():
+#     if "file" not in request.files:
+#         return jsonify({"error": "No file part in the request."}), 400
+
+#     file = request.files["file"]
+#     if file.filename == "":
+#         return jsonify({"error": "No selected file."}), 400
+
+#     if file and allowed_file(file.filename):
+#         filename = secure_filename(file.filename)
+#         file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+#         file.save(file_path)
+
+#         try:
+#             if filename.lower().endswith(".csv"):
+#                 df = pd.read_csv(file_path)
+#             else:
+#                 df = pd.read_excel(file_path)
+#         except Exception as err:
+#             return jsonify({"error": f"Error reading the file: {err}"}), 500
+
+#         # Extract only numeric columns.
+#         numeric_df = df.select_dtypes(include=[np.number])
+#         numeric_columns = [
+#             col for col in numeric_df.columns
+#             if col and str(col).strip() != "" and numeric_df[col].notna().any()
+#         ]
+
+#         user_id = request.form.get("user_id", "default_user")
+#         session["user_id"] = user_id
+
+#         db = SessionLocal()
+#         db.query(UploadedValue).delete()
+#         db.commit()
+
+#         for col in numeric_columns:
+#             for value in numeric_df[col].dropna():
+#                 record = UploadedValue(column_name=col, value=float(value))
+#                 db.add(record)
+#         db.commit()
+#         db.close()
+
+#         return jsonify({"user_id": user_id, "columns": numeric_columns}), 200
+#     else:
+#         return jsonify({"error": "Invalid file type. Please upload a CSV or XLSX file."}), 400
+
+
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
     if "file" not in request.files:
@@ -131,23 +186,26 @@ def api_upload():
         except Exception as err:
             return jsonify({"error": f"Error reading the file: {err}"}), 500
 
-        # Extract only numeric columns.
+        # Extract only numeric columns
         numeric_df = df.select_dtypes(include=[np.number])
         numeric_columns = [
             col for col in numeric_df.columns
             if col and str(col).strip() != "" and numeric_df[col].notna().any()
         ]
 
-        user_id = request.form.get("user_id", "default_user")
+        user_id = request.form.get("user_id", "default_user")  # Capture user ID
         session["user_id"] = user_id
 
         db = SessionLocal()
-        db.query(UploadedValue).delete()
+
+        # Delete only current user's old data
+        db.query(UploadedValue).filter(UploadedValue.user_id == user_id).delete()
         db.commit()
 
+        # Store new data with user_id
         for col in numeric_columns:
             for value in numeric_df[col].dropna():
-                record = UploadedValue(column_name=col, value=float(value))
+                record = UploadedValue(user_id=user_id, column_name=col, value=float(value))
                 db.add(record)
         db.commit()
         db.close()
@@ -155,6 +213,7 @@ def api_upload():
         return jsonify({"user_id": user_id, "columns": numeric_columns}), 200
     else:
         return jsonify({"error": "Invalid file type. Please upload a CSV or XLSX file."}), 400
+    
 
 @app.route("/api/compute", methods=["POST"])
 def api_compute():
@@ -168,7 +227,7 @@ def api_compute():
         return jsonify({"error": "Missing required data."}), 400
 
     table_name = "uploaded_values"
-    query_info = generate_sql_query(column, operation, table_name)
+    query_info = generate_sql_query(column, operation, table_name, user_id)
     final_sql_query = query_info["final_sql_query"]
 
     if not final_sql_query:

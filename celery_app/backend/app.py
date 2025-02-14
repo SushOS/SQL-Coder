@@ -43,9 +43,16 @@ SessionLocal = sessionmaker(bind=engine)
 db_session = scoped_session(SessionLocal)
 
 # Table for storing numeric values
+# class UploadedValue(Base):
+#     __tablename__ = "uploaded_values"
+#     id = Column(Integer, primary_key=True)
+#     column_name = Column(String(255), index=True)
+#     value = Column(Float)
+
 class UploadedValue(Base):
     __tablename__ = "uploaded_values"
     id = Column(Integer, primary_key=True)
+    user_id = Column(String(255), index=True)  # Added to track which user uploaded the data
     column_name = Column(String(255), index=True)
     value = Column(Float)
 
@@ -63,8 +70,7 @@ Base.metadata.create_all(bind=engine)
 # ----------------------------------
 # Open-Source LLM Setup (llama-3.1-8b-instant)
 # ----------------------------------
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
+
 from groq import Groq
 client = Groq(api_key=groq_api_key)
 print("Model loaded successfully.")
@@ -103,16 +109,16 @@ def allowed_file(filename):
     """Check if the file has one of the allowed extensions."""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def generate_sql_query(column, operation, table_name):
+def generate_sql_query(column, operation, table_name, user_id):
     # Fallback query if the LLM fails to generate a valid query.
-    fallback_query = f"SELECT {operation}(value) FROM {table_name} WHERE column_name = '{column}';"
+    fallback_query = f"SELECT {operation}(value) FROM uploaded_values WHERE column_name = '{column}' AND user_id = '{user_id}';"
     prompt = (
         "[INST]Your task is to write a MySQL query. "
-        "The query must compute the {operation} of the column '{column}' from the table '{table_name}'. "
+        "The query must compute the {operation} of the column '{column}' from the table '{table_name}' having user_id : {user_id}. "
         "The table has the following columns: id, column_name, value. "
         "Return ONLY the MySQL query and nothing else, with no additional text or explanation. "
         "The query must start with SELECT.[/INST]"
-    ).format(operation=operation, column=column, table_name=table_name)
+    ).format(operation=operation, column=column, table_name=table_name, user_id=user_id)
     
     try:
         response = client.chat.completions.create(
@@ -159,12 +165,15 @@ def process_file_task(file_path, user_id):
     
     db = SessionLocal()
     # Clear previous data (modify as needed).
-    db.query(UploadedValue).delete()
+    # db.query(UploadedValue).delete()
+    # db.commit()
+
+    db.query(UploadedValue).filter(UploadedValue.user_id == user_id).delete()
     db.commit()
     
     for col in numeric_columns:
         for value in numeric_df[col].dropna():
-            record = UploadedValue(column_name=col, value=float(value))
+            record = UploadedValue(user_id=user_id, column_name=col, value=float(value))
             db.add(record)
     db.commit()
     db.close()
@@ -227,7 +236,7 @@ def api_compute():
         return jsonify({"error": "Missing required data."}), 400
 
     table_name = "uploaded_values"
-    query_info = generate_sql_query(column, operation, table_name)
+    query_info = generate_sql_query(column, operation, table_name, user_id)
     final_sql_query = query_info["final_sql_query"]
 
     if not final_sql_query:
