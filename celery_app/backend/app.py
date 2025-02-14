@@ -24,7 +24,7 @@ print(f"Using DATABASE_URL: {DATABASE_URL}")
 # Setup Flask
 # ----------------------------------
 app = Flask(__name__, template_folder="../frontend")
-app.secret_key = "a_very_secret_key"
+app.secret_key = os.getenv("SECRET_KEY")
 
 # File upload configuration
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
