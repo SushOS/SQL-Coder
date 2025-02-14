@@ -265,7 +265,8 @@ def api_compute():
         db.commit()
         db_session.remove()
     except Exception as db_e:
-        computed_value = "This query is not supported by the database."
+        # computed_value = "This query is not supported by the database."
+        computed_value = f"{computed_value} (Database error: {db_e})"
         return jsonify({
             "final_sql_query": final_sql_query,
             "result": computed_value
